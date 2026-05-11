@@ -38,27 +38,31 @@ async def list_alerts(
     limit: int                = Query(default=20, le=100),
     offset: int               = 0,
 ):
-    db = get_supabase()
-    query = db.table("alerts").select("*")
+    try:
+        db = get_supabase()
+        query = db.table("alerts").select("*")
 
-    if status:
-        query = query.eq("status", status)
-    if severity:
-        query = query.eq("severity", severity)
-    if alert_type:
-        query = query.eq("alert_type", alert_type)
+        if status:
+            query = query.eq("status", status)
+        if severity:
+            query = query.eq("severity", severity)
+        if alert_type:
+            query = query.eq("alert_type", alert_type)
 
-    result   = query.order("created_at", desc=True).limit(limit).offset(offset).execute()
-    total    = db.table("alerts").select("id", count="exact").execute()
-    critical = db.table("alerts").select("id", count="exact").eq("status", "active").eq("severity", "critical").execute()
-    high     = db.table("alerts").select("id", count="exact").eq("status", "active").eq("severity", "high").execute()
+        result   = query.order("created_at", desc=True).limit(limit).offset(offset).execute()
+        total    = db.table("alerts").select("id", count="exact").execute()
+        critical = db.table("alerts").select("id", count="exact").eq("status", "active").eq("severity", "critical").execute()
+        high     = db.table("alerts").select("id", count="exact").eq("status", "active").eq("severity", "high").execute()
 
-    return AlertListResponse(
-        alerts=result.data or [],
-        total=total.count or 0,
-        active_critical=critical.count or 0,
-        active_high=high.count or 0,
-    )
+        return AlertListResponse(
+            alerts=result.data or [],
+            total=total.count or 0,
+            active_critical=critical.count or 0,
+            active_high=high.count or 0,
+        )
+    except Exception as exc:
+        log.warning("list_alerts: schema not ready", error=str(exc))
+        return AlertListResponse(alerts=[], total=0, active_critical=0, active_high=0)
 
 
 @router.post("/run-checks")
@@ -234,7 +238,7 @@ async def update_channel(channel_id: str, body: ChannelUpdate):
     return result.data[0]
 
 
-@router.delete("/channels/{channel_id}", status_code=204)
+@router.delete("/channels/{channel_id}", status_code=204, response_model=None)
 async def delete_channel(channel_id: str):
     db = get_supabase()
     result = db.table("notification_channels").delete().eq("id", channel_id).execute()

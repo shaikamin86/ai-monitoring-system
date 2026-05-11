@@ -16,25 +16,29 @@ async def list_narratives(
     offset: int = 0,
     sort_by: str = "virality_score",
 ):
-    db = get_supabase()
-    query = db.table("narratives").select("*")
+    try:
+        db = get_supabase()
+        query = db.table("narratives").select("*")
 
-    if status:
-        query = query.eq("status", status)
-    if min_threat is not None:
-        query = query.gte("threat_level", min_threat)
+        if status:
+            query = query.eq("status", status)
+        if min_threat is not None:
+            query = query.gte("threat_level", min_threat)
 
-    allowed_sorts = ["virality_score", "threat_level", "post_count", "last_activity", "first_detected"]
-    if sort_by not in allowed_sorts:
-        sort_by = "virality_score"
+        allowed_sorts = ["virality_score", "threat_level", "post_count", "last_activity", "first_detected"]
+        if sort_by not in allowed_sorts:
+            sort_by = "virality_score"
 
-    result = query.order(sort_by, desc=True).limit(limit).offset(offset).execute()
-    all_result = db.table("narratives").select("id", count="exact").execute()
+        result = query.order(sort_by, desc=True).limit(limit).offset(offset).execute()
+        all_result = db.table("narratives").select("id", count="exact").execute()
 
-    return NarrativeListResponse(
-        narratives=result.data or [],
-        total=all_result.count or 0,
-    )
+        return NarrativeListResponse(
+            narratives=result.data or [],
+            total=all_result.count or 0,
+        )
+    except Exception as exc:
+        log.warning("list_narratives: schema not ready", error=str(exc))
+        return NarrativeListResponse(narratives=[], total=0)
 
 
 @router.get("/{narrative_id}", response_model=NarrativeDetailResponse)

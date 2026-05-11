@@ -31,7 +31,7 @@ function useBreadcrumbs() {
 }
 
 export function TopBar() {
-  const [time, setTime] = useState(new Date());
+  const [time, setTime] = useState<Date | null>(null);
   const [connected, setConnected] = useState(false);
   const [wsActivity, setWsActivity] = useState(false);
   const breadcrumbs = useBreadcrumbs();
@@ -51,6 +51,7 @@ export function TopBar() {
   });
 
   useEffect(() => {
+    setTime(new Date());
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
@@ -135,8 +136,8 @@ export function TopBar() {
         {/* Clock */}
         <div className="flex items-center gap-2 text-[11px] font-mono text-text-secondary">
           <Clock className="w-3 h-3 text-text-muted" />
-          <span className="tabular-nums">{format(time, "HH:mm:ss")}</span>
-          <span className="text-text-muted hidden md:inline">{format(time, "dd MMM")}</span>
+          <span className="tabular-nums">{time ? format(time, "HH:mm:ss") : "--:--:--"}</span>
+          <span className="text-text-muted hidden md:inline">{time ? format(time, "dd MMM") : "--- ---"}</span>
           <span className="text-text-dim text-[10px] hidden lg:inline">MYT</span>
         </div>
 

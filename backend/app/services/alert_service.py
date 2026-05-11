@@ -16,7 +16,7 @@ Notifications are handled separately by NotificationDispatcher
 import numpy as np
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 from app.core.config import settings
 from app.core.database import get_supabase
@@ -53,7 +53,7 @@ def _dedup(db, source_id: str, alert_type: str, cooldown_hours: int = 2) -> bool
     return bool(result.data)
 
 
-def _insert_alert(db, alert: Dict[str, Any]) -> str | None:
+def _insert_alert(db, alert: Dict[str, Any]) -> Optional[str]:
     result = db.table("alerts").insert(alert).execute()
     if result.data:
         alert_id = result.data[0]["id"]

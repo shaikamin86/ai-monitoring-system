@@ -10,78 +10,125 @@ import structlog
 log = structlog.get_logger()
 
 
+def _empty_dashboard() -> Dict[str, Any]:
+    """Return a zero-state dashboard when tables are unavailable."""
+    now = datetime.now(timezone.utc)
+    return {
+        "total_posts_24h": 0,
+        "active_alerts": 0,
+        "active_narratives": 0,
+        "critical_alerts": 0,
+        "sentiment_distribution": {"positive": 0, "negative": 0, "neutral": 0, "mixed": 0},
+        "platform_distribution": {},
+        "top_hashtags": [],
+        "emerging_narratives": [],
+        "recent_alerts": [],
+        "hourly_volume": [
+            {
+                "time": (now - timedelta(hours=i)).replace(minute=0, second=0, microsecond=0).isoformat(),
+                "count": 0,
+            }
+            for i in range(24, 0, -1)
+        ],
+        "_schema_ready": False,
+    }
+
+
 async def get_dashboard_metrics() -> Dict[str, Any]:
     db = get_supabase()
     now = datetime.now(timezone.utc)
     last_24h = (now - timedelta(hours=24)).isoformat()
-    last_1h = (now - timedelta(hours=1)).isoformat()
 
-    # Parallel fetches
-    total_posts = db.table("posts").select("id", count="exact").gte("posted_at", last_24h).execute()
-    active_alerts = db.table("alerts").select("id", count="exact").eq("status", "active").execute()
-    active_narratives = db.table("narratives").select("id", count="exact").in_("status", ["emerging", "active"]).execute()
-    critical_alerts = db.table("alerts").select("id", count="exact").eq("status", "active").eq("severity", "critical").execute()
+    try:
+        # Parallel fetches
+        total_posts = db.table("posts").select("id", count="exact").gte("posted_at", last_24h).execute()
+        active_alerts = db.table("alerts").select("id", count="exact").eq("status", "active").execute()
+        active_narratives = db.table("narratives").select("id", count="exact").in_("status", ["emerging", "active"]).execute()
+        critical_alerts = db.table("alerts").select("id", count="exact").eq("status", "active").eq("severity", "critical").execute()
+    except Exception as exc:
+        log.warning("Dashboard metrics: schema not ready", error=str(exc))
+        return _empty_dashboard()
 
-    # Sentiment distribution (last 24h)
-    sentiment_result = (
-        db.table("posts")
-        .select("sentiment")
-        .gte("posted_at", last_24h)
-        .execute()
-    )
-    sentiment_dist = {"positive": 0, "negative": 0, "neutral": 0, "mixed": 0}
-    for post in sentiment_result.data or []:
-        s = post.get("sentiment", "neutral") or "neutral"
-        sentiment_dist[s] = sentiment_dist.get(s, 0) + 1
-
-    # Platform distribution
-    platform_result = (
-        db.table("posts")
-        .select("platform")
-        .gte("posted_at", last_24h)
-        .execute()
-    )
-    platform_dist: Dict[str, int] = {}
-    for post in platform_result.data or []:
-        p = post.get("platform", "other")
-        platform_dist[p] = platform_dist.get(p, 0) + 1
-
-    # Top hashtags
-    top_hashtags = (
-        db.table("hashtags")
-        .select("tag, total_count")
-        .order("total_count", desc=True)
-        .limit(10)
-        .execute()
-    ).data or []
-
-    # Emerging narratives
-    emerging = (
-        db.table("narratives")
-        .select(
-            "id, title, threat_level, post_count, virality_score, status, "
-            "last_activity, first_detected, unique_authors, engagement_total, "
-            "sentiment_distribution, languages, platforms, is_coordinated, "
-            "key_themes, key_hashtags, momentum_score, coordination_score"
+    try:
+        # Sentiment distribution (last 24h)
+        sentiment_result = (
+            db.table("posts")
+            .select("sentiment")
+            .gte("posted_at", last_24h)
+            .execute()
         )
-        .in_("status", ["emerging", "active"])
-        .order("virality_score", desc=True)
-        .limit(10)
-        .execute()
-    ).data or []
+        sentiment_dist = {"positive": 0, "negative": 0, "neutral": 0, "mixed": 0}
+        for post in sentiment_result.data or []:
+            s = post.get("sentiment", "neutral") or "neutral"
+            sentiment_dist[s] = sentiment_dist.get(s, 0) + 1
+    except Exception:
+        sentiment_dist = {"positive": 0, "negative": 0, "neutral": 0, "mixed": 0}
 
-    # Recent critical alerts
-    recent_alerts = (
-        db.table("alerts")
-        .select("*")
-        .eq("status", "active")
-        .order("created_at", desc=True)
-        .limit(5)
-        .execute()
-    ).data or []
+    try:
+        # Platform distribution
+        platform_result = (
+            db.table("posts")
+            .select("platform")
+            .gte("posted_at", last_24h)
+            .execute()
+        )
+        platform_dist: Dict[str, int] = {}
+        for post in platform_result.data or []:
+            p = post.get("platform", "other")
+            platform_dist[p] = platform_dist.get(p, 0) + 1
+    except Exception:
+        platform_dist = {}
 
-    # Hourly post volume (last 24h)
-    hourly_volume = await get_hourly_volume(hours=24)
+    try:
+        top_hashtags = (
+            db.table("hashtags")
+            .select("tag, total_count")
+            .order("total_count", desc=True)
+            .limit(10)
+            .execute()
+        ).data or []
+    except Exception:
+        top_hashtags = []
+
+    try:
+        emerging = (
+            db.table("narratives")
+            .select(
+                "id, title, threat_level, post_count, virality_score, status, "
+                "last_activity, first_detected, unique_authors, engagement_total, "
+                "sentiment_distribution, languages, platforms, is_coordinated, "
+                "key_themes, key_hashtags, momentum_score, coordination_score"
+            )
+            .in_("status", ["emerging", "active"])
+            .order("virality_score", desc=True)
+            .limit(10)
+            .execute()
+        ).data or []
+    except Exception:
+        emerging = []
+
+    try:
+        recent_alerts = (
+            db.table("alerts")
+            .select("*")
+            .eq("status", "active")
+            .order("created_at", desc=True)
+            .limit(5)
+            .execute()
+        ).data or []
+    except Exception:
+        recent_alerts = []
+
+    try:
+        hourly_volume = await get_hourly_volume(hours=24)
+    except Exception:
+        hourly_volume = [
+            {
+                "time": (now - timedelta(hours=i)).replace(minute=0, second=0, microsecond=0).isoformat(),
+                "count": 0,
+            }
+            for i in range(24, 0, -1)
+        ]
 
     return {
         "total_posts_24h": total_posts.count or 0,
@@ -94,6 +141,7 @@ async def get_dashboard_metrics() -> Dict[str, Any]:
         "emerging_narratives": emerging,
         "recent_alerts": recent_alerts,
         "hourly_volume": hourly_volume,
+        "_schema_ready": True,
     }
 
 
@@ -103,12 +151,15 @@ async def get_hourly_volume(hours: int = 24) -> List[Dict[str, Any]]:
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(hours=hours)
 
-    rows = (
-        db.table("posts")
-        .select("posted_at")
-        .gte("posted_at", cutoff.isoformat())
-        .execute()
-    ).data or []
+    try:
+        rows = (
+            db.table("posts")
+            .select("posted_at")
+            .gte("posted_at", cutoff.isoformat())
+            .execute()
+        ).data or []
+    except Exception:
+        rows = []
 
     # Build hour-keyed buckets
     buckets: Dict[str, int] = {}
@@ -136,12 +187,14 @@ async def get_trend_data(
     now = datetime.now(timezone.utc)
     cutoff = (now - timedelta(hours=hours)).isoformat()
 
-    query = db.table("posts").select("posted_at, sentiment, platform, engagement_score").gte("posted_at", cutoff)
-    if platform:
-        query = query.eq("platform", platform)
-
-    result = query.execute()
-    posts = result.data or []
+    try:
+        query = db.table("posts").select("posted_at, sentiment, platform, engagement_score").gte("posted_at", cutoff)
+        if platform:
+            query = query.eq("platform", platform)
+        result = query.execute()
+        posts = result.data or []
+    except Exception:
+        return []
 
     # Group by interval
     buckets: Dict[str, Dict] = {}

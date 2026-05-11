@@ -199,8 +199,8 @@ async def toggle_source(
     return {"id": source_id, "is_active": is_active}
 
 
-@router.delete("/sources/{source_id}", status_code=204)
-async def delete_source(source_id: str) -> None:
+@router.delete("/sources/{source_id}", status_code=204, response_model=None)
+async def delete_source(source_id: str):
     db = get_supabase()
     db.table("ingestion_sources").delete().eq("id", source_id).execute()
 

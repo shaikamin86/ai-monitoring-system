@@ -1,6 +1,7 @@
+from typing import Optional
 from app.notifications.dispatcher import NotificationDispatcher
 
-_dispatcher: NotificationDispatcher | None = None
+_dispatcher: Optional[NotificationDispatcher] = None
 
 
 def get_dispatcher() -> NotificationDispatcher:

@@ -29,7 +29,7 @@ log = structlog.get_logger()
 _SEVERITY_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 
 # Simple in-process cache: (channels_list, expires_at)
-_channel_cache: tuple[List[Dict], datetime] | tuple[None, None] = (None, None)
+_channel_cache: tuple = (None, None)  # (List[Dict] | None, datetime | None)
 _CACHE_TTL_SECONDS = 300
 
 

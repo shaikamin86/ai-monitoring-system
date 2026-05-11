@@ -896,7 +896,7 @@ def seed_posts(nmap: dict, imap: dict, hmap: dict, emap: dict):
             ),
             "author_followers": author_followers,
             "author_verified": next(
-                (r[4] for r in INFLUENCERS_RAW if r[2] == author_username), False
+                (r[5] for r in INFLUENCERS_RAW if r[2] == author_username), False
             ),
             "language": lang,
             "sentiment": sentiment,

@@ -1,7 +1,9 @@
+import structlog
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 from app.core.database import get_supabase
 
+log = structlog.get_logger()
 router = APIRouter(prefix="/influencers", tags=["influencers"])
 
 
@@ -14,24 +16,28 @@ async def list_influencers(
     offset: int = 0,
     sort_by: str = "influence_score",
 ):
-    db = get_supabase()
-    query = db.table("influencers").select("*").eq("is_monitored", True)
+    try:
+        db = get_supabase()
+        query = db.table("influencers").select("*").eq("is_monitored", True)
 
-    if platform:
-        query = query.eq("platform", platform)
-    if is_flagged is not None:
-        query = query.eq("is_flagged", is_flagged)
-    if min_influence is not None:
-        query = query.gte("influence_score", min_influence)
+        if platform:
+            query = query.eq("platform", platform)
+        if is_flagged is not None:
+            query = query.eq("is_flagged", is_flagged)
+        if min_influence is not None:
+            query = query.gte("influence_score", min_influence)
 
-    allowed_sorts = ["influence_score", "followers_count", "avg_engagement_rate", "last_active"]
-    if sort_by not in allowed_sorts:
-        sort_by = "influence_score"
+        allowed_sorts = ["influence_score", "followers_count", "avg_engagement_rate", "last_active"]
+        if sort_by not in allowed_sorts:
+            sort_by = "influence_score"
 
-    result = query.order(sort_by, desc=True).limit(limit).offset(offset).execute()
-    total = db.table("influencers").select("id", count="exact").eq("is_monitored", True).execute()
+        result = query.order(sort_by, desc=True).limit(limit).offset(offset).execute()
+        total = db.table("influencers").select("id", count="exact").eq("is_monitored", True).execute()
 
-    return {"influencers": result.data or [], "total": total.count or 0}
+        return {"influencers": result.data or [], "total": total.count or 0}
+    except Exception as exc:
+        log.warning("list_influencers: schema not ready", error=str(exc))
+        return {"influencers": [], "total": 0}
 
 
 @router.get("/{influencer_id}")
