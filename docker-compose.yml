@@ -1,0 +1,79 @@
+version: "3.9"
+
+services:
+  # FastAPI backend (API + WebSocket + background tasks + ingestion scheduler)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    # Ingestion credentials forwarded explicitly so they're visible in compose logs
+    environment:
+      - TWITTER_BEARER_TOKEN=${TWITTER_BEARER_TOKEN:-}
+      - FACEBOOK_ACCESS_TOKEN=${FACEBOOK_ACCESS_TOKEN:-}
+      - FACEBOOK_APP_ID=${FACEBOOK_APP_ID:-}
+      - TIKTOK_CLIENT_KEY=${TIKTOK_CLIENT_KEY:-}
+      - TIKTOK_CLIENT_SECRET=${TIKTOK_CLIENT_SECRET:-}
+      - INGESTION_ENABLED=${INGESTION_ENABLED:-true}
+      - INGESTION_RSS_INTERVAL_MIN=${INGESTION_RSS_INTERVAL_MIN:-10}
+      - INGESTION_TWITTER_INTERVAL_MIN=${INGESTION_TWITTER_INTERVAL_MIN:-5}
+      - INGESTION_FACEBOOK_INTERVAL_MIN=${INGESTION_FACEBOOK_INTERVAL_MIN:-15}
+      - INGESTION_TIKTOK_INTERVAL_MIN=${INGESTION_TIKTOK_INTERVAL_MIN:-30}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_IDS=${TELEGRAM_CHAT_IDS:-[]}
+      - TELEGRAM_MIN_SEVERITY=${TELEGRAM_MIN_SEVERITY:-high}
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+      - EMAIL_RECIPIENTS=${EMAIL_RECIPIENTS:-[]}
+      - EMAIL_MIN_SEVERITY=${EMAIL_MIN_SEVERITY:-medium}
+
+  # Next.js frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # Redis cache
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 60 1000
+
+volumes:
+  redis_data:
