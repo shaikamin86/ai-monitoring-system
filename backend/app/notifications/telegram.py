@@ -60,8 +60,27 @@ def _format_message(alert: Dict[str, Any]) -> str:
     ]
     if description:
         lines.append(f"📄 {description}")
-    if post_count:
+
+    # Narrative-spike specific detail from trigger_data
+    if alert_type == "narrative_spike":
+        td = alert.get("trigger_data") or {}
+        multiplier     = td.get("multiplier")
+        curr_count     = td.get("current_count")
+        threat_level   = td.get("threat_level")
+        momentum_score = td.get("momentum_score")
+
+        if multiplier and multiplier > 1:
+            lines.append(f"📈 Volume multiplier: <b>{multiplier:.1f}×</b>")
+        if curr_count:
+            lines.append(f"📊 Posts (last hour): <b>{curr_count:,}</b>")
+        if threat_level is not None:
+            bar = "█" * int(threat_level) + "░" * (10 - int(threat_level))
+            lines.append(f"⚠️ Threat level: <b>{threat_level}/10</b>  <code>{bar}</code>")
+        if momentum_score and momentum_score > 0:
+            lines.append(f"🚀 Momentum score: <b>{momentum_score:.0f}/100</b>")
+    elif post_count:
         lines.append(f"📊 Posts involved: <b>{post_count:,}</b>")
+
     if platforms:
         lines.append(f"🌐 Platforms: {', '.join(platforms)}")
     lines += [

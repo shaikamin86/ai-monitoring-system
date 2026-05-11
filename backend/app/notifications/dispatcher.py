@@ -115,18 +115,24 @@ class NotificationDispatcher:
             if allowed_types and alert_type not in allowed_types:
                 continue
 
-            # Per-channel dedup (already in history?)
-            if _already_dispatched(db, alert["id"], channel["id"]):
-                continue
+            # Per-channel dedup (skip for synthetic env channels — no real UUID)
+            channel_id_str = str(channel["id"])
+            if not channel_id_str.startswith("__env_"):
+                if _already_dispatched(db, alert["id"], channel_id_str):
+                    continue
 
             # Send
             success, error = await _send_to_channel(channel, alert)
 
-            # Record history
+            # Record history (synthetic env channels have no real UUID)
+            real_channel_id = (
+                None if str(channel["id"]).startswith("__env_")
+                else channel["id"]
+            )
             _record_history(
                 db,
                 alert_id=alert["id"],
-                channel_id=channel["id"],
+                channel_id=real_channel_id,
                 channel_type=channel["channel_type"],
                 channel_target=_channel_target(channel),
                 status="sent" if success else "failed",
@@ -136,6 +142,36 @@ class NotificationDispatcher:
 
 # ── Module-level helpers ─────────────────────────────────────────────────────
 
+def _settings_channels() -> List[Dict]:
+    """
+    Synthesise notification channels from environment config.
+
+    TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_IDS produce one virtual channel per
+    chat ID, scoped to narrative_spike alerts at TELEGRAM_MIN_SEVERITY.
+    These run alongside any DB-configured channels without replacing them.
+    """
+    channels: List[Dict] = []
+    if not settings.TELEGRAM_BOT_TOKEN:
+        return channels
+    try:
+        chat_ids: List[str] = json.loads(settings.TELEGRAM_CHAT_IDS)
+    except Exception:
+        chat_ids = []
+    for chat_id in chat_ids:
+        channels.append({
+            # Synthetic ID — stable per chat_id so dedup keys are consistent
+            "id":           f"__env_telegram_{chat_id}",
+            "channel_type": "telegram",
+            "channel_name": f"Telegram {chat_id} (env)",
+            "config":       {"chat_id": chat_id},
+            "min_severity": settings.TELEGRAM_MIN_SEVERITY,
+            # Restrict to narrative spikes; extend the list here to cover more
+            "alert_types":  ["narrative_spike"],
+            "is_active":    True,
+        })
+    return channels
+
+
 async def _load_channels(db) -> List[Dict]:
     """Return active channels; refreshes cache every 5 minutes."""
     global _channel_cache
@@ -143,13 +179,18 @@ async def _load_channels(db) -> List[Dict]:
     if cached_list is not None and expires_at and datetime.now(timezone.utc) < expires_at:
         return cached_list
 
-    result = (
-        db.table("notification_channels")
-        .select("*")
-        .eq("is_active", True)
-        .execute()
-    )
-    channels = result.data or []
+    try:
+        result = (
+            db.table("notification_channels")
+            .select("*")
+            .eq("is_active", True)
+            .execute()
+        )
+        db_channels = result.data or []
+    except Exception:
+        db_channels = []
+
+    channels = db_channels + _settings_channels()
     _channel_cache = (
         channels,
         datetime.now(timezone.utc) + timedelta(seconds=_CACHE_TTL_SECONDS),
